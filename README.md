@@ -1,5 +1,5 @@
 # FGMC-Project
-This project extract data from API and analysis using pyspark
+This project involves extracting data from an API and performing analysis using PySpark.
 
 # Design Decisions
 
