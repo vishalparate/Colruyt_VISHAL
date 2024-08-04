@@ -1,83 +1,82 @@
 # FGMC-Project
 This project extract data from API and analysis using pyspark
 
-### Design Decisions
+# Design Decisions
 
 1. Logging: 
-   - You use Python’s `logging` module to log various levels of messages (info, error) which helps in tracking the progress and diagnosing issues.
+   The Python logging module is used to record informational and error messages, aiding in process tracking and troubleshooting.
 
 2. Schema Definition:
-   - You define schemas for nested JSON structures which ensures that Spark can correctly interpret the incoming data format.
+   Schemas are defined for nested JSON data to facilitate accurate Spark data interpretation.
 
 3. Data Processing:
-   - You fetch data from multiple URLs, aggregate it, and handle it as a JSON string. This approach allows you to work with data from multiple sources in a unified way.
-
+   Data from various URLs is consolidated into a JSON string, enabling unified processing of multiple data sources.
+   
 4. Data Transformation:
-   - Exploding Arrays: You explode arrays to normalize nested structures.
-   - Column Extraction and Renaming: You select and rename columns to make the DataFrame schema more intuitive.
-   - Postal Code Mapping: You create a UDF to map postal codes to provinces, which adds useful geographic context.
-   - One-Hot Encoding: You handle categorical data in the `handoverServices` array by creating one-hot encoded columns.
+   Exploding Arrays: Nested array structures are flattened for easier analysis by exploding them into individual rows.
+   Column Extraction and Renaming: Relevant columns are extracted and renamed to improve data clarity and accessibility.
+   Postal Code Mapping: Postal codes are mapped to their corresponding provinces using a User-Defined Function (UDF) to    enrich the dataset with geographic information.
+   One-Hot Encoding: Categorical data within the handoverServices array is transformed into numerical representations through one-hot encoding for machine learning compatibility.
 
 5. Anonymization:
-   - Sensitive data is anonymized using hashing, which is a good practice for protecting personal information.
+   Hashing is employed to anonymize sensitive data, safeguarding personal information from unauthorized access.
 
 6. Data Partitioning:
-   - Data is saved as Parquet files and partitioned by province, optimizing for performance when querying by province.
-
+   Data is stored in Parquet format, partitioned by province, to optimize query performance for provincial-level analysis.
 
 Detailed Explanation for Comprehensive Analysis of Geographic Distances Using Apache Spark: API Data Extraction, Haversine Distance Calculation, and Metrics Enrichment"
 
 1. Define the Haversine Function
 
-Purpose: To calculate the great-circle distance between two points on the Earth’s surface using their latitude and longitude.
-Implementation: The haversine function uses the Haversine formula to compute distances in kilometers.
+Purpose: Accurately calculate the great-circle distance between two geographic points (latitude, longitude) on the Earth's spherical surface, essential for spatial analysis and proximity-based calculations.
+Implementation: Employ the Haversine formula, a mathematical model that approximates the Earth as a sphere. The function takes latitude and longitude coordinates of two points as input and returns the distance in kilometers.
 
 2. Create UDF for Haversine
 
-Purpose: To use the Haversine function in Spark SQL transformations.
-Implementation: haversine_udf is defined as a UDF (User Defined Function) with DoubleType as the return type.
+Purpose: Integrate the Haversine function into Spark SQL operations for efficient distance calculations on large datasets.
+Implementation: Define a User-Defined Function (UDF) named haversine_udf that encapsulates the Haversine function's logic. The UDF accepts four double-precision arguments (latitude1, longitude1, latitude2, longitude2) and returns a double-precision value representing the distance in kilometers.
 
 3. Select Necessary Columns
 
-Purpose: To streamline the DataFrame by selecting only relevant columns for distance calculations.
-Implementation: authorized_df is reduced to include only "placeId", "latitude", "longitude", "placeType_id", and "commercialName".
+Purpose: Optimize performance and memory usage by focusing on essential columns for distance calculations.
+Implementation: Create a new DataFrame by selecting only the required columns: placeId, latitude, longitude, placeType_id, and commercialName from the original authorized_df. This reduced dataset streamlines subsequent computations.
 
 4. Alias the DataFrames
 
-Purpose: To facilitate self-joins for distance calculations.
-Implementation: authorized_df is aliased as cust and other to represent two sets of places in the cross join.
+Purpose: To distinguish between the two copies of the DataFrame when performing a self-join to calculate distances between all pairs of places.
+Implementation: Create two aliases of the authorized_df: cust and other. This allows for a clear representation of the two datasets involved in the distance calculations
 
 5. Calculate Distances
 
-Purpose: To compute distances between every pair of places using the Haversine formula.
-Implementation: A cross join between cust and other is performed, and the Haversine UDF is applied to calculate distances. The filter ensures that distances between the same place (cust.placeId equals other.placeId) are not calculated.
+Purpose: Determine the great-circle distance between every combination of places in the dataset.
+Implementation: Perform a cross-join between the aliased DataFrames cust and other to generate all possible pairs of places. Apply the haversine_udf to calculate the distance between each pair. Filter out rows where the placeId of cust and other are identical to avoid calculating distances to the same location.
 
-7. Cache Distance DataFrame
+6. Cache Distance DataFrame
 
-Purpose: To optimize performance by avoiding recomputation of the distance DataFrame.
-Implementation: distance_df is cached using .cache().
+Purpose: Enhance performance by storing the computed distances in memory for reuse, preventing redundant calculations.
+Implementation: Apply the .cache() method to the distance_df DataFrame to instruct Spark to store the DataFrame in memory. This optimization is particularly effective when the distance DataFrame is accessed multiple times in subsequent operations.
 
-8. Calculate Average Distance to Customers
+7. Calculate Average Distance to Customers
 
-Purpose: To find the average distance of each place to all other places.
-Implementation: Aggregates distances grouped by placeId and calculates the average, rounding the result to two decimal places.
+Purpose: Determine the average distance of each place to all other places in the dataset.
+Implementation: Group the distance_df by placeId, calculate the average distance using the avg function, and round the result to two decimal places.
 
-9. Calculate Average Distance to Competitors
+8. Calculate Average Distance to Competitors
 
-Purpose: To find the average distance of each place to places of the same type.
-Implementation: Filters distances where the place types are the same and then calculates the average distance, rounding to two decimal places.
+Purpose: Determine the average distance between places of the same type.
+Implementation: Filter the distance_df to include only rows where the placeType_id of both places match. Group the filtered DataFrame by placeId and calculate the average distance, rounding to two decimal places.
 
-10. Join Average Distances with Original DataFrame
+9. Join Average Distances with Original DataFrame
 
-Purpose: To enrich the original DataFrame with calculated average distances.
-Implementation: Joins avg_distance_customers_df and avg_distance_competitors_df back to authorized_df. Selected columns include place IDs, commercial names, and average distances.
+Purpose: Incorporate the calculated average distances into the original DataFrame for further analysis and insights.
+Implementation: Join the avg_distance_customers_df and avg_distance_competitors_df DataFrames back to the authorized_df based on the placeId column. Select the necessary columns, including placeId, commercialName, and the calculated average distances.
 
-11. Fill Missing Values and Drop Duplicates
+10. Fill Missing Values and Drop Duplicates
 
-Purpose: To clean up the resulting DataFrame by handling missing values and ensuring uniqueness.
-Implementation: Missing values for average distances are filled with 0, and duplicates are removed.
+Purpose: Enhance data quality by handling missing values and removing duplicates.
+Implementation: Replace missing values in the average_distance and average_distance_same_type columns with 0. Remove duplicate rows based on the placeId column to ensure data integrity.
 
-12. Display Final Results
+11. Display Final Results
 
-Purpose: To show the final enriched DataFrame with average distances.
-Implementation: The final_df is displayed to show the results.
+Purpose: Visualize the final DataFrame containing the enriched data.
+Implementation: Display the cleaned_df to inspect the results of the data cleaning and enrichment process.
